@@ -3,6 +3,7 @@ pub mod bridge;
 pub mod claudeauth;
 pub mod codexauth;
 pub mod commands;
+pub mod dispatch;
 pub mod error;
 pub mod execution;
 pub mod gitsync;
@@ -77,6 +78,7 @@ pub fn run() {
             }
 
             app.manage(AppState::new(cfg_dir, initial));
+            dispatch::write_beacon(app);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
