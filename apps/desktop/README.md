@@ -38,33 +38,27 @@ pnpm --filter @uvibe/desktop exec tauri build \
 
 ## Release process (CI)
 
-Releases are built by `.github/workflows/desktop-release.yml` — a 4-target
-matrix (macOS arm64 + intel, Windows x86_64, Linux x86_64) that runs the same
-`pnpm build → fetch-node-sidecar → bundle-uvibe → tauri build` steps per leg.
+Releases go through `.github/workflows/release.yml`, which calls the shared
+[Labyrica release workflow](https://github.com/Labyrica/.github/blob/main/RELEASING.md)
+(macOS arm64 + intel, Windows x86_64, Linux x86_64). Its `prepare` step runs
+`pnpm build → fetch-node-sidecar → bundle-uvibe → fetch-whisper` per target.
+
+Bump the version in `package.json`, `src-tauri/Cargo.toml` and
+`src-tauri/tauri.conf.json`, then push a matching tag:
 
 ```bash
-git tag desktop-v0.2.9
-git push origin desktop-v0.2.9
+git tag v0.8.0
+git push origin v0.8.0
 ```
 
-The workflow then appears in **Actions**; when it finishes, a **draft** GitHub
-release named `foundry-unity desktop-v0.2.9` holds all installers. Review it
-and click **Publish** manually. (You can also start it from the Actions tab via
-**Run workflow** — `workflow_dispatch`.)
+The build is verified, signed for the updater, mirrored to
+[Labyrica/foundry-unity-releases](https://github.com/Labyrica/foundry-unity-releases)
+and published automatically. CLI/package source releases use `cli-vX.Y.Z` tags
+so they never trigger a desktop build.
 
-Artifacts per release:
+macOS builds are not notarized unless Apple secrets are configured at org level.
 
-| OS | Files |
-|---|---|
-| macOS (arm64, intel) | `.dmg` |
-| Windows | `.msi`, NSIS `.exe` |
-| Linux | `.deb`, `.AppImage` |
-
-These builds are **unsigned and un-notarized** — there are no Apple, minisign,
-or auto-updater secrets in the workflow. That is expected for v1; the install
-notes below cover the resulting first-launch prompts.
-
-## Install notes (unsigned builds)
+## Install notes
 
 - **macOS** — Gatekeeper blocks unsigned apps on first launch. Right-click the
   app in `/Applications` → **Open** → **Open** on the dialog (only needed once).
