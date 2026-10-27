@@ -171,3 +171,36 @@ Plan / phase / status / verify / decisions live in `.planning/`. The format mirr
   - Non-write but state-touching: `unity_open_scene`/`unity_load_scene_additive`/`unity_open_prefab` (navigation; allowed in `read_only`, guarded against discarding unsaved changes) and `unity_simulate_input`/`unity_set_animator_parameter`/`unity_get_animator_state` (runtime/ephemeral).
   - Studio enables the tools automatically. Scene/prefab mutations are wrapped in Unity's Undo system (Ctrl+Z); asset/script writes recover through the pre-task git checkpoint or automatic snapshot. Every write is recorded to `.unity-vibe/action_log.jsonl`.
 - The Test Framework integration lives in a separate assembly guarded by `UNITY_INCLUDE_TESTS`, so the core bridge still compiles when `com.unity.test-framework` is absent.
+
+## Releasing
+
+Foundry for Unity ships through the Labyrica release server (https://labyrica.com/admin), not GitHub Releases or GitHub Actions. Employees install and update it with Labyrica Dispatch after signing in. App id: `foundry-unity`. Signing key: `~/.tauri/foundry-unity.key` (empty password); its public half is the app's `pubkey` in `labyrica-dispatch/catalog/apps.json`.
+
+1. Bump the version in `apps/desktop/package.json`, `apps/desktop/src-tauri/tauri.conf.json` and `apps/desktop/src-tauri/Cargo.toml`; tag `desktop-v<version>`.
+2. Build on this Mac:
+   ```sh
+   pnpm install --frozen-lockfile && pnpm build
+   cd apps/desktop
+   node scripts/bundle-uvibe.mjs && node scripts/fetch-whisper.mjs
+   for t in aarch64-apple-darwin x86_64-apple-darwin x86_64-pc-windows-msvc; do node scripts/fetch-node-sidecar.mjs --target $t; done
+   pnpm exec tauri build --config src-tauri/tauri.bundle.conf.json --target aarch64-apple-darwin --bundles app
+   pnpm exec tauri build --config src-tauri/tauri.bundle.conf.json --target x86_64-apple-darwin --bundles app
+   pnpm exec tauri build --config src-tauri/tauri.bundle.conf.json --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
+   ```
+3. The app has no updater plugin, so Tauri makes no `.app.tar.gz` and signs nothing: package and sign by hand. No spaces in uploaded names.
+   ```sh
+   COPYFILE_DISABLE=1 tar -C src-tauri/target/aarch64-apple-darwin/release/bundle/macos -czf Foundry.for.Unity_aarch64.app.tar.gz "Foundry for Unity.app"
+   COPYFILE_DISABLE=1 tar -C src-tauri/target/x86_64-apple-darwin/release/bundle/macos -czf Foundry.for.Unity_x64.app.tar.gz "Foundry for Unity.app"
+   cp "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Foundry for Unity_<version>_x64-setup.exe" Foundry.for.Unity_<version>_x64-setup.exe
+   export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/foundry-unity.key)" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+   for f in Foundry.for.Unity_*; do npx @tauri-apps/cli@2 signer sign "$f"; done
+   ```
+4. Upload and publish to the release server:
+   ```sh
+   node ~/Repos/labyrica-hub/bin/push.ts login roberto-admin   # once; asks for the authenticator code
+   node ~/Repos/labyrica-hub/bin/push.ts publish foundry-unity <version> <files...>
+   ```
+   Every file needs its signature next to it (`<file>.sig`). The server rejects unsigned files and files signed with any key other than this app's.
+5. Delete the build cache afterwards (`cargo clean` in `apps/desktop/src-tauri`, and remove the packaged files).
+
+If the key is lost, generate a new one (`npx @tauri-apps/cli@2 signer generate --ci -p "" -w ~/.tauri/foundry-unity.key`), then update the `pubkey` in `labyrica-dispatch/catalog/apps.json` and the app's `pubkey` row in the release server database (`/data/hub.db` in the `labyrica-hub` pod; the dashboard has no control for it yet). Builds signed with the old key stop installing.
